@@ -34,25 +34,66 @@ bot.on('callback_query', (callbackQuery) => {
     const userId = callbackQuery.from.id;
 
     if (callbackQuery.data === 'request') {
-        bot.sendMessage(chatId, 'Введите номер кабинета:').then(() => {
-            bot.once('message', (msg) => {
-                const { text } = msg;
+        // Отправляем сообщение с клавиатурой выбора проделанной работы
+        bot.sendMessage(chatId, 'Выберите тип проделанной работы:', {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: 'Настройка принтера', callback_data: 'printer_setup' }],
+                    [{ text: 'Настройка АРМ', callback_data: 'arm_setup' }],
+                    // Добавьте другие типы работы, если необходимо
+                ],
+            },
+        }).then(() => {
+            // Добавляем обработчик для выбора типа работы
+            bot.once('callback_query', (workTypeQuery) => {
+                const selectedWorkType = workTypeQuery.data;
+                const workTypeMappings = {
+                    'printer_setup': 'Настройка принтера',
+                    'arm_setup': 'Настройка АРМ',
+                    // Добавьте другие соответствия по мере необходимости
+                };
+            
+                // Получите внешнее название типа работы
+                const externalWorkType = workTypeMappings[selectedWorkType] || selectedWorkType;
+            
 
-                if (!requestsData[text]) {
-                    requestsData[text] = [];
-                }
+                // Теперь отправляем сообщение, запрашивая номер кабинета
+                bot.sendMessage(chatId, 'Введите номер кабинета:').then(() => {
+                    bot.once('message', (roomMsg) => {
+                        const roomNumber = roomMsg.text;
 
-                currentRoomNumber = text;
+                        if (!requestsData[roomNumber]) {
+                            requestsData[roomNumber] = [];
+                        }
 
-                bot.sendMessage(chatId, 'Введите информацию о проделанной работе:').then(() => {
-                    bot.once('message', (msg) => {
-                        const { text: taskText } = msg;
-                        currentTaskText = taskText;
+                        // Теперь запрашиваем информацию о проделанной работе в кабинете
+                        bot.sendMessage(chatId, 'Введите дополнительную информацию о проделанной работе:').then(() => {
+                            bot.once('message', (taskMsg) => {
+                                const taskText = taskMsg.text;
 
-                        requestsData[currentRoomNumber].push({ user: userId, task: currentTaskText });
-
-                        bot.sendMessage(chatId, `Информация о работе в кабинете ${currentRoomNumber} пользователя ${userId}: ${currentTaskText}`);
+                                requestsData[roomNumber].push({ user: userId, task: `${externalWorkType}: ${taskText}` });
+                                bot.sendMessage(chatId, 'Выберите действие:', {
+                                    reply_markup: {
+                                        inline_keyboard: [
+                                            [{ text: 'Заявка', callback_data: 'request' }],
+                                            [{ text: 'Неделя', callback_data: 'week' }],
+                                            [{ text: 'Месяц', callback_data: 'month' }],
+                                        ],
+                                    },
+                                });
+                            });
+                        });
                     });
+                }).then(() => {
+                    // Теперь формируем и отправляем отчет
+                    const userRequests = requestsData[roomNumber].filter((request) => request.user === userId);
+                    let reportMessage = `Отчет по кабинету ${roomNumber} для пользователя ${userId}\n`;
+
+                    userRequests.forEach((request) => {
+                        reportMessage += `- ${request.task}\n`;
+                    });
+
+                    bot.sendMessage(chatId, reportMessage);
                 });
             });
         });
@@ -107,24 +148,25 @@ bot.on('callback_query', (callbackQuery) => {
             }
         }
 
-        // Фрагмент кода для формирования и отправки сообщения с отчетом
-        for (const taskType in groupedUserRequests) {
-            if (groupedUserRequests.hasOwnProperty(taskType)) {
-                currentUserReport += `\n${taskType}:\n`;
+    // Фрагмент кода для формирования и отправки сообщения с отчетом
+for (const taskType in groupedUserRequests) {
+    if (groupedUserRequests.hasOwnProperty(taskType)) {
+        currentUserReport += `\n${taskType}:\n`;
 
-                for (const roomNumber in groupedUserRequests[taskType]) {
-                    if (groupedUserRequests[taskType].hasOwnProperty(roomNumber)) {
-                        const tasksInRoom = groupedUserRequests[taskType][roomNumber];
+        for (const roomNumber in groupedUserRequests[taskType]) {
+            if (groupedUserRequests[taskType].hasOwnProperty(roomNumber)) {
+                const tasksInRoom = groupedUserRequests[taskType][roomNumber];
 
-                        // Проверяем, что у нас есть номер кабинета
-                        if (currentRoomNumber && currentTaskText) {
-                            currentUserReport += `- ${roomNumber}\n`;
-                        }
-                    }
+                // Проверяем, что у нас есть номер кабинета
+                if (roomNumber && tasksInRoom.length > 0) {
+                    currentUserReport += ` ${tasksInRoom.join(', ')}:${roomNumber}:\n`;
                 }
             }
         }
-        
+    }
+}
+
+
         reportMessage += currentUserReport;
 
         bot.sendMessage(chatId, reportMessage);
